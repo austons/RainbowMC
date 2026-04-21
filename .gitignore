@@ -9,6 +9,8 @@ ff14b/documents
 
 # VSCode
 .vscode/settings.json
+.vscode/cmake-kits.json
+.vscode/extensions.json
 
 # Clion
 /.idea
