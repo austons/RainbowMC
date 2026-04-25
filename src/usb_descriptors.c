@@ -239,12 +239,12 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 // array of pointer to string descriptors
 char const* string_desc_arr [] =
 {
-  (const char[]) { 0x09, 0x04 },  // 0: is supported language is English (0x0409)
-  "DanGiu",                       // 1: Manufacturer
-  "PicoMemcard Device",           // 2: Product
-  "123456789012",                 // 3: Serials, should use chip ID
-  "PicoMemcard CDC",              // 4: CDC Interface
-  "PicoMemcard MSC",              // 5: MSC Interface
+  (const char[]) { 0x09, 0x04 }, // 0: is supported language is English (0x0409)
+  "Macifom",                     // 1: Manufacturer
+  "RainbowMC Device",            // 2: Product
+  "123456789012",                // 3: Serials, should use chip ID
+  "RainbowMC CDC",               // 4: CDC Interface
+  "RainbowMC MSC",               // 5: MSC Interface
 };
 
 static uint16_t _desc_str[32];
@@ -282,7 +282,7 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
   }
 
   // first byte is length (including header), second byte is string type
-  _desc_str[0] = (TUSB_DESC_STRING << 8 ) | (2*chr_count + 2);
+  _desc_str[0] = (uint16_t) ((TUSB_DESC_STRING << 8 ) | (2*chr_count + 2));
 
   return _desc_str;
 }

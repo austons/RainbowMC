@@ -2,83 +2,76 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "pico/stdlib.h"
+#include <pico/stdlib.h>
 /* Time and Timestamps */
-#include "pico/time.h"
+#include <pico/time.h>
 /* TinyUSB */
-#include "bsp/board.h"
-#include "tusb.h"
+#include <bsp/board.h>
+#include <tusb.h>
 /* LFS */
-#include "lfs.h"
-/* LFS disk and Virtual FAT disk */
-#include "ram_disk.h"
-#include "lfs_disk.h"
+#include <lfs.h>
+/* FAT Simulation */
+#include "mimic_fat.h"
 /* Memcard Simulation */
 #include "memcard_simulator.h"
 /* LED control */
 #include "led.h"
 /* Global Configuration */
 #include "config.h"
+#include "tusb_config.h"
 
-bool tud_mount_status = false;
-
+extern const struct lfs_config lfs_pico_flash_config;  // littlefs_driver.c
+lfs_t fs;
 void cdc_task(void);
+
+/*
+ * Format the file system if it does not exist
+ */
+static void test_filesystem_and_format_if_necessary(bool force_format) {
+   if (force_format || (lfs_mount(&fs, &lfs_pico_flash_config) != 0)) {
+        printf("Format the onboard flash memory with littlefs\n");
+
+        lfs_format(&fs, &lfs_pico_flash_config);
+        lfs_mount(&fs, &lfs_pico_flash_config);
+
+		/*
+        lfs_file_t f;
+        lfs_file_open(&fs, &f, "README.TXT", LFS_O_RDWR|LFS_O_CREAT);
+        lfs_file_write(&fs, &f, README_TXT, strlen(README_TXT));
+        lfs_file_close(&fs, &f);
+		*/
+
+        if (mimic_fat_usb_device_is_enabled()) {
+            mimic_fat_create_cache();
+        }
+    }
+}
 
 /*------------- MAIN -------------*/
 int main(void) {
+	
+	board_init();
+	tud_init(BOARD_TUD_RHPORT);
 	stdio_init_all();
 	led_init();
 
-	lfs_t lfs;
-	
 	/* Initialize LittleFs */
-	int lfs_status = lfs_mount(&lfs, &LFS_CFG);	// mount the filesystem
-	if (lfs_status) {
-		lfs_format(&lfs, &LFS_CFG);	// reformat file system if error occurred (normally on first boot)
-		lfs_mount(&lfs, &LFS_CFG);
-	}
-
-	/* Pico connected to PC, initialize USB transfer mode */
-	board_init();
-	tusb_init();
+	test_filesystem_and_format_if_necessary(false);
 
 	while (1) {
+		/* Pico connected to PC, initialize USB transfer mode */
 		tud_task(); // tinyusb device task
-		cdc_task();
+		// cdc_task();
 
-		if(to_ms_since_boot(get_absolute_time()) > TUD_MOUNT_TIMEOUT && !tud_mount_status)
+		if(to_ms_since_boot(get_absolute_time()) > TUD_MOUNT_TIMEOUT && !mimic_fat_usb_device_is_enabled())
 			break;
 	}
-	
+	lfs_unmount(&fs); // Memcard currently assumes it isn't already mounted
 	/* Pico powered by PSX, initialize memory card simulation */
 	simulate_memory_card();	
 
 	return 0;
 }
-
-//--------------------------------------------------------------------+
-// Device callbacks
-//--------------------------------------------------------------------+
-
-// Invoked when device is mounted
-void tud_mount_cb(void) {
-	tud_mount_status = true;
-	RAM_disk_import_lfs_memcard();
-}
-
-// Invoked when device is unmounted
-void tud_umount_cb(void) {}
-
-// Invoked when usb bus is suspended
-// remote_wakeup_en : if host allow us  to perform remote wakeup
-// Within 7ms, device must draw an average of current less than 2.5 mA from bus
-void tud_suspend_cb(bool remote_wakeup_en) {
-	(void) remote_wakeup_en;
-}
-
-// Invoked when usb bus is resumed
-void tud_resume_cb(void) {}
-
 
 //--------------------------------------------------------------------+
 // USB CDC

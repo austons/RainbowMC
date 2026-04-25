@@ -1,11 +1,12 @@
 #include "memory_card.h"
-#include "lfs_disk.h"
-#include "lfs.h"
-#include "pico/malloc.h"
-#include "pico/time.h"
-#include "pico/multicore.h"
+#include <lfs.h>
+#include <pico/malloc.h>
+#include <pico/time.h>
+#include <pico/multicore.h>
 #include "led.h"
 #include "config.h"
+
+extern const struct lfs_config lfs_pico_flash_config;  // littlefs_driver.c
 
 uint32_t memory_card_init(memory_card_t* mc) {
 	if(!mc)
@@ -26,7 +27,7 @@ uint32_t memory_card_import(memory_card_t* mc, uint8_t* file_name) {
 		mc->flag_byte = MC_FLAG_BYTE_DEF;
 		lfs_t lfs;
 		lfs_file_t memcard;
-		if(LFS_ERR_OK == lfs_mount(&lfs, &LFS_CFG)) {
+		if(LFS_ERR_OK == lfs_mount(&lfs, &lfs_pico_flash_config)) {
 			if(LFS_ERR_OK == lfs_file_open(&lfs, &memcard, file_name, LFS_O_RDONLY)) {
 				lfs_ssize_t size = lfs_file_read(&lfs, &memcard, mc->data, MC_SIZE);
 				if(size < 0) {
@@ -88,7 +89,7 @@ uint32_t memory_card_sync(memory_card_t* mc) {
 	if(mc) {
 		lfs_t lfs;
 		lfs_file_t memcard;
-		if(LFS_ERR_OK == lfs_mount(&lfs, &LFS_CFG)) {
+		if(LFS_ERR_OK == lfs_mount(&lfs, &lfs_pico_flash_config)) {
 			if(LFS_ERR_OK == lfs_file_open(&lfs, &memcard, MEMCARD_FILE_NAME, LFS_O_RDWR)) {
 				if(MC_SIZE == lfs_file_write(&lfs, &memcard, mc->data, MC_SIZE)) {
 					memory_card_set_sync(mc, false);

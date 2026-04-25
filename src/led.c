@@ -1,7 +1,7 @@
 #include "led.h"
 #include "config.h"
-#include "hardware/gpio.h"
-#include "hardware/pio.h"
+#include <hardware/gpio.h>
+#include <hardware/pio.h>
 #ifdef RP2040ZERO
 #include "ws2812.pio.h"
 #endif
