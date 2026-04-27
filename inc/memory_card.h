@@ -31,6 +31,7 @@
 typedef struct {
 	uint8_t flag_byte;
 	uint8_t* data;
+	uint8_t* file_name;
 	bool out_of_sync;
 	uint32_t last_operation_timestamp;
 } memory_card_t;

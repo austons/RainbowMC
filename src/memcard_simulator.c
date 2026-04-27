@@ -7,7 +7,6 @@
 #include "psxSPI.pio.h"
 #include "memory_card.h"
 #include "led.h"
-#include "pad.h"
 #include "config.h"
 
 #define MEMCARD_TOP 0x81
@@ -28,7 +27,11 @@ uint offsetCmdReader;
 uint offsetDatWriter;
 uint offsetDatReader;
 
+uint8_t mc_index = 0;
 memory_card_t mc;
+mutex_t mutex_sm_tick;
+bool request_next_mc = false;
+const char* mc_filenames[] = { "WHITE.MCR", "RED.MCR", "ORANGE.MCR", "YELLOW.MCR", "GREEN.MCR", "BLUE.MCR", "INDIGO.MCR", "PURPLE.MCR"};
 
 enum states {
 	MC_IDLE,
@@ -40,8 +43,6 @@ enum states {
 	MC_EXECUTE_ID,
 	MC_ABORT,
 	MC_END,
-	PAD_ACCESS,
-	PAD_SNIFF,
 };
 
 uint8_t current_state = MC_IDLE;
@@ -60,9 +61,7 @@ _Noreturn void simulation_thread();
  * @brief Interrupt handler called when SEL goes high
  * Notifies main thread to reset SMs and sim thread
  */
-void pio0_irq0() {
-	// NOTE: This will not block core 1
-	// Reset the state machines and sim thread, transaction has ended
+void restart_pio_sm() {
 	pio_set_sm_mask_enabled(pio0, 1 << smCmdReader | 1 << smDatReader | 1 << smDatWriter, false);
 	pio_restart_sm_mask(pio0, 1 << smCmdReader | 1 << smDatReader | 1 << smDatWriter);
 	pio_sm_exec(pio0, smCmdReader, pio_encode_jmp(offsetCmdReader));	// restart smCmdReader PC
@@ -83,21 +82,37 @@ void pio0_irq0() {
 	sw_status = 0x0000;
 
 	pio_enable_sm_mask_in_sync(pio0, 1 << smCmdReader | 1 << smDatReader | 1 << smDatWriter);
+}
+
+/**
+ * @brief Simulates memory card being briefly unplugged and replugged
+ */
+void simulate_mc_reconnect() {
+	pio_sm_set_enabled(pio0, smSelMonitor, false);
+	pio_restart_sm_mask(pio0, 1 << smCmdReader | 1 << smDatReader | 1 << smDatWriter);
+	pio_sm_exec(pio0, smCmdReader, pio_encode_jmp(offsetCmdReader));	// restart smCmdReader PC
+	pio_sm_exec(pio0, smDatReader, pio_encode_jmp(offsetDatReader));	// restart smDatReader PC
+	pio_sm_exec(pio0, smDatWriter, pio_encode_jmp(offsetDatWriter));	// restart smDatWriter PC
+	pio_sm_clear_fifos(pio0, smCmdReader);
+	pio_sm_clear_fifos(pio0, smDatReader);
+	pio_sm_drain_tx_fifo(pio0, smDatWriter); // drain instead of clear, so that we empty the OSR
+	sleep_ms(MC_RECONNECT_TIME);
+	pio_sm_set_enabled(pio0, smSelMonitor, true);
+}
+
+/**
+ * @brief Interrupt handler called when SEL goes high
+ * Notifies main thread to reset SMs and sim thread
+ */
+void pio0_irq0() {
+	// NOTE: This will not block core 1
+	// Reset the state machines and sim thread, transaction has ended
+	restart_pio_sm();
 	pio_interrupt_clear(pio0, 0);
 }
 
 void cancel_ack() {
 	pio_sm_exec(pio0, smCmdReader, pio_encode_jmp(offsetCmdReader));		// restart smCmdReader
-}
-
-bool should_sync() {
-	if(current_state == MC_IDLE) {
-		if(mc.out_of_sync) {
-			if((to_ms_since_boot(get_absolute_time()) - mc.last_operation_timestamp) > IDLE_AUTOSYNC_TIMEOUT)
-				return true;
-		}
-	}
-	return false;
 }
 
 void state_machine_tick(uint8_t data) {
@@ -113,50 +128,12 @@ void state_machine_tick(uint8_t data) {
 			checksum = 0x00;
 			recv_checksum = 0x00;
 			sw_status = 0x0000;
-			switch(data) {
-				case MEMCARD_TOP:
-					// Send flag byte and start transaction
-					write_byte_blocking(pio0, smDatWriter, mc.flag_byte);
-					next_state = MC_COMMAND;
-					break;
-				case PAD_TOP:
-					next_state = PAD_ACCESS;
-					// fall through and cancel ack
-				default:
-					cancel_ack();
+			if (data == MEMCARD_TOP) {
+				// Send flag byte and start transaction
+				write_byte_blocking(pio0, smDatWriter, mc.flag_byte);
+				next_state = MC_COMMAND;
 			}
-			break;
-		case PAD_ACCESS:	/* during PAD interactiona always cancel ACKs to avoid interfering */
-			cancel_ack();
-			
-			switch(data) {
-				case PAD_READ:
-					next_state = PAD_SNIFF;
-					break;
-				default:
-					next_state = MC_IDLE;
-			}
-			
-			break;
-		case PAD_SNIFF:
-			cancel_ack();
-			switch (sm_byte_counter) {
-				case 0:
-					pio_sm_clear_fifos(pio0, smDatReader);	// clear out Hi-Z, idlo, and idhi bytes
-					break;
-				case 1: 
-					sw_status = read_byte_blocking(pio0, smDatReader);
-					break;
-				case 2:
-					sw_status = sw_status | (read_byte_blocking(pio0, smDatReader) << 8);
-					if(sw_status == (START & SELECT & TRIANGLE))	// perform manual sync
-						if(mc.out_of_sync)
-							memory_card_sync(&mc);
-					break;
-				default:
-					next_state = MC_IDLE;
-			}
-			++sm_byte_counter;
+			else cancel_ack();
 			break;
 		case MC_COMMAND: // received a wake up byte, wait for command
 			switch(data) {
@@ -311,16 +288,69 @@ void state_machine_tick(uint8_t data) {
 }
 
 _Noreturn void simulation_thread() {
+	uint8_t item;
+	multicore_lockout_victim_init();	// prepare core1 to be locked by core1 (when writing flash)
 	while(true) {
-		uint8_t item = read_byte_blocking(pio0, smCmdReader);
+		mutex_enter_blocking(&mutex_sm_tick);
+		item = read_byte_blocking(pio0, smCmdReader);
 		state_machine_tick(item);
-		if(should_sync()) {
-			memory_card_sync(&mc);
-		}
+		mutex_exit(&mutex_sm_tick);
 	}
 }
 
+typedef enum {
+    CFG_OFF,
+    CFG_ON
+} cfg_mode_t;
+static cfg_mode_t cfg_mode = CFG_OFF;
+static absolute_time_t btn_press_time;
+static absolute_time_t last_release_time;
+static uint8_t pending_select_count = 0;
+static bool button_prev = false;
+
+static inline bool button_pressed() {
+    return gpio_get(PIN_BTN) == 0;
+}
+
+void process_config_button() {
+    bool pressed = button_pressed();
+    absolute_time_t now = get_absolute_time();
+
+    // borda de descida
+    if (pressed && !button_prev) {
+        btn_press_time = now;
+    }
+
+    // segurando
+	/*
+    if (pressed) {
+        int64_t held_ms = absolute_time_diff_us(btn_press_time, now) / 1000;
+        if (held_ms >= 5000 && !request_new_mc) {
+            request_new_mc = true;
+        }
+    }
+	*/
+
+    // borda de subida
+    if (!pressed && button_prev) {
+        int64_t held_ms = absolute_time_diff_us(btn_press_time, now) / 1000;
+
+        if (held_ms > 20 && held_ms < 1000) {
+            request_next_mc = true;
+        }
+    }
+
+    button_prev = pressed;
+}
+
 _Noreturn int simulate_memory_card() {
+
+	// Configure 'Next Card' button
+	gpio_init(PIN_BTN);
+    gpio_set_dir(PIN_BTN, GPIO_IN);
+    gpio_pull_up(PIN_BTN);
+
+	mutex_init(&mutex_sm_tick);
 	uint32_t status;
 	status = memory_card_init(&mc);
 	if(status != MC_OK) {
@@ -329,7 +359,7 @@ _Noreturn int simulate_memory_card() {
 			sleep_ms(2000);
 		}
 	}
-	status = memory_card_import(&mc, MEMCARD_FILE_NAME);
+	status = memory_card_import(&mc, (uint8_t*)mc_filenames[mc_index]);
 	if(status != MC_OK) {
 		while(true) {
 			led_blink_error(status);
@@ -358,7 +388,6 @@ _Noreturn int simulate_memory_card() {
 	dat_reader_program_init(pio0, smDatReader, offsetDatReader, PIN_DAT);
 	sel_monitor_program_init(pio0, smSelMonitor, offsetSelMonitor, PIN_SEL);
 
-
 	/* Enable all SM simultaneously */
 	uint32_t smMask = (1 << smSelMonitor) | (1 << smCmdReader) | (1 << smDatReader) | (1 << smDatWriter);
 	pio_enable_sm_mask_in_sync(pio0, smMask);
@@ -366,9 +395,40 @@ _Noreturn int simulate_memory_card() {
 	/* Launch memory card thread */
 	printf("\n\nStarting simulation core...\n");
 	multicore_launch_core1(simulation_thread);
-	multicore_lockout_victim_init();	// prepare core0 to be locked by core1 (when writing flash)
 
 	while(true) {
 		// do nothing, now the core is only responsible for managing interrupt (when SEL goes high)
+		process_config_button();
+
+		mutex_enter_blocking(&mutex_sm_tick);
+		if(current_state == MC_IDLE) {
+			if(mc.out_of_sync) {
+				if (request_next_mc || (to_ms_since_boot(get_absolute_time()) - mc.last_operation_timestamp) > IDLE_AUTOSYNC_TIMEOUT) {
+					status = memory_card_sync(&mc);
+					if (status != MC_OK) {
+						while(true) {
+							led_blink_error(status);
+							sleep_ms(2000);
+						}
+					}
+				}
+			}
+			if (request_next_mc) {
+				request_next_mc = false;
+				uint8_t next_index = (mc_index + 1) % NUM_MEMORY_CARDS;
+				led_output_sync_status(true);
+            	status = memory_card_import(&mc, (uint8_t*)mc_filenames[next_index]);
+				if (status != MC_OK) {
+					while(true) {
+						led_blink_error(status);
+						sleep_ms(2000);
+					}
+				}
+				mc_index = next_index;
+				// TODO: Change LED color to indicate newly loaded memcard
+				simulate_mc_reconnect();
+			}
+		}
+		mutex_exit(&mutex_sm_tick);
 	}
 }

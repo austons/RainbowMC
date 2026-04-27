@@ -5,8 +5,9 @@
 #define TUD_MOUNT_TIMEOUT	3000			// max time (in ms) before giving up on MSC mode (USB) and starting memcard simulation
 #define MSC_WRITE_SYNC_TIMEOUT 1 * 1000		// time (in ms) expired since last MSC write before exporting RAM disk into LFS
 #define IDLE_AUTOSYNC_TIMEOUT 5 * 1000		// time (in ms) the memory card must be inactive before automatic sync from RAM to LFS
-#define MEMCARD_FILE_NAME	"MEMCARD.MCR"	// name of memory card file image
-#define LFS_VOLUME_NAME "Pico MC"		// name of the mounted USB Mass Storage volume
+#define LFS_VOLUME_NAME "Pico MC"			// name of the mounted USB Mass Storage volume
+#define MC_RECONNECT_TIME	1000			// time (in ms) the memory card stays disconnected when simulating reconnection
+#define NUM_MEMORY_CARDS	4				// total number of virtual memory cards
 
 /* Board targeted by build */
 #define PICO
@@ -17,6 +18,7 @@
 
 /* PSX Interface Pinout */
 #ifdef PICO
+	#define PIN_BTN 10
 	#define PIN_DAT 5
 	#define PIN_CMD PIN_DAT + 1		// must be immediately after PIN_DAT
 	#define PIN_SEL PIN_CMD + 1		// must be immediately after PIN_CMD
