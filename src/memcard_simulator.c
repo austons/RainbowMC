@@ -28,10 +28,9 @@ uint offsetDatWriter;
 uint offsetDatReader;
 
 uint8_t mc_index = 0;
-memory_card_t mc;
+static memory_card_t mc;
 mutex_t mutex_sm_tick;
 bool request_next_mc = false;
-const char* mc_filenames[] = { "WHITE.MCR", "RED.MCR", "ORANGE.MCR", "YELLOW.MCR", "GREEN.MCR", "BLUE.MCR", "INDIGO.MCR", "PURPLE.MCR"};
 
 enum states {
 	MC_IDLE,
@@ -359,7 +358,7 @@ _Noreturn int simulate_memory_card() {
 			sleep_ms(2000);
 		}
 	}
-	status = memory_card_import(&mc, (uint8_t*)mc_filenames[mc_index]);
+	status = memory_card_import(&mc, mc_index);
 	if(status != MC_OK) {
 		while(true) {
 			led_blink_error(status);
@@ -404,7 +403,9 @@ _Noreturn int simulate_memory_card() {
 		if(current_state == MC_IDLE) {
 			if(mc.out_of_sync) {
 				if (request_next_mc || (to_ms_since_boot(get_absolute_time()) - mc.last_operation_timestamp) > IDLE_AUTOSYNC_TIMEOUT) {
+					multicore_lockout_start_blocking();
 					status = memory_card_sync(&mc);
+					multicore_lockout_end_blocking();
 					if (status != MC_OK) {
 						while(true) {
 							led_blink_error(status);
@@ -417,7 +418,7 @@ _Noreturn int simulate_memory_card() {
 				request_next_mc = false;
 				uint8_t next_index = (mc_index + 1) % NUM_MEMORY_CARDS;
 				led_output_sync_status(true);
-            	status = memory_card_import(&mc, (uint8_t*)mc_filenames[next_index]);
+            	status = memory_card_import(&mc, next_index);
 				if (status != MC_OK) {
 					while(true) {
 						led_blink_error(status);

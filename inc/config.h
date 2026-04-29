@@ -2,12 +2,19 @@
 #define __CONFIG_H__
 
 /* Global configuration options for PicoMemcard */
+#define LFS_BLOCK_COUNT 384
+#define LFS_BLOCK_SIZE 4096
 #define TUD_MOUNT_TIMEOUT	3000			// max time (in ms) before giving up on MSC mode (USB) and starting memcard simulation
 #define MSC_WRITE_SYNC_TIMEOUT 1 * 1000		// time (in ms) expired since last MSC write before exporting RAM disk into LFS
 #define IDLE_AUTOSYNC_TIMEOUT 5 * 1000		// time (in ms) the memory card must be inactive before automatic sync from RAM to LFS
-#define LFS_VOLUME_NAME "Pico MC"			// name of the mounted USB Mass Storage volume
+#define LFS_VOLUME_NAME "RainbowMC"			// name of the mounted USB Mass Storage volume
 #define MC_RECONNECT_TIME	1000			// time (in ms) the memory card stays disconnected when simulating reconnection
-#define NUM_MEMORY_CARDS	4				// total number of virtual memory cards
+#define NUM_MEMORY_CARDS	8				// total number of virtual memory cards
+#define MC_IMAGE_INDEX_NONE (NUM_MEMORY_CARDS + 1)
+#define DEV_INFO_MANUFACTURER "TBD"
+#define DEV_INFO_MODEL "RainbowMC"
+#define DEV_INFO_VERSION "1.0"
+#define DEV_PROP_FRIENDLY_NAME "RainbowMC MTP"
 
 /* Board targeted by build */
 #define PICO

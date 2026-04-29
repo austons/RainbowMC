@@ -6,7 +6,7 @@
 
 #define MC_SEC_SIZE			128		// size of single sector in bytes
 #define MC_SEC_COUNT		1024	// number of sector in one memory card
-#define MC_SIZE				MC_SEC_SIZE * MC_SEC_COUNT		// size of memory card in bytes
+#define MC_SIZE				(MC_SEC_SIZE * MC_SEC_COUNT)	// size of memory card in bytes
 #define MC_FLAG_BYTE_DEF	0x08	// bit 3 set = new memory card inserted
 
 #define MC_ID1 0x5A
@@ -27,17 +27,18 @@
 #define MC_FILE_WRITE_ERR	4
 #define MC_FILE_SIZE_ERR	5
 #define MC_NO_INIT			6
+#define MC_INDEX_OOB_ERR	7
 
 typedef struct {
 	uint8_t flag_byte;
 	uint8_t* data;
-	uint8_t* file_name;
 	bool out_of_sync;
 	uint32_t last_operation_timestamp;
+	uint32_t index;
 } memory_card_t;
 
 uint32_t memory_card_init(memory_card_t* mc);
-uint32_t memory_card_import(memory_card_t* mc, uint8_t* file_name);
+uint32_t memory_card_import(memory_card_t* mc, uint32_t index);
 bool memory_card_is_sector_valid(memory_card_t* mc, uint32_t sector);
 uint8_t* memory_card_get_sector_ptr(memory_card_t* mc, uint32_t sector);
 void memory_card_set_sync(memory_card_t* mc, bool out_of_sync);

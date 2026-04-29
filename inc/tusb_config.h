@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2019 Ha Thach (tinyusb.org)
+ * Copyright (c) 2025 Ennebi Elettronica (https://ennebielettronica.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,8 +23,8 @@
  *
  */
 
-#ifndef PICO_LITTLEFS_USB_TUSB_CONFIG_H_
-#define PICO_LITTLEFS_USB_TUSB_CONFIG_H_
+#ifndef TUSB_CONFIG_H_
+#define TUSB_CONFIG_H_
 
 #ifdef __cplusplus
  extern "C" {
@@ -45,7 +45,7 @@
 #endif
 
 //--------------------------------------------------------------------
-// Common Configuration
+// COMMON CONFIGURATION
 //--------------------------------------------------------------------
 
 // defined by compiler flags for flexibility
@@ -79,7 +79,7 @@
 #endif
 
 #ifndef CFG_TUSB_MEM_ALIGN
-#define CFG_TUSB_MEM_ALIGN    __attribute__ ((aligned(4)))
+#define CFG_TUSB_MEM_ALIGN        __attribute__ ((aligned(4)))
 #endif
 
 //--------------------------------------------------------------------
@@ -91,24 +91,49 @@
 #endif
 
 //------------- CLASS -------------//
-#define CFG_TUD_CDC              1
-#define CFG_TUD_MSC              1
-#define CFG_TUD_HID              0
-#define CFG_TUD_MIDI             0
-#define CFG_TUD_VENDOR           0
+#define CFG_TUD_MTP               1
+#define CFG_TUD_MTP_EP_BUFSIZE    512
+#define CFG_TUD_MTP_EP_CONTROL_BUFSIZE  16 // should be enough to hold data in MTP control request
 
-// CDC FIFO size of TX and RX
-#define CFG_TUD_CDC_RX_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)
-#define CFG_TUD_CDC_TX_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)
+//------------- MTP device info -------------//
+#define CFG_TUD_MTP_DEVICEINFO_EXTENSIONS   "microsoft.com: 1.0; "
+#define CFG_TUD_MTP_DEVICEINFO_SUPPORTED_OPERATIONS \
+   MTP_OP_GET_DEVICE_INFO, \
+   MTP_OP_OPEN_SESSION, \
+   MTP_OP_CLOSE_SESSION, \
+   MTP_OP_GET_STORAGE_IDS, \
+   MTP_OP_GET_STORAGE_INFO, \
+   MTP_OP_GET_OBJECT_HANDLES, \
+   MTP_OP_GET_OBJECT_INFO, \
+   MTP_OP_GET_OBJECT, \
+   MTP_OP_DELETE_OBJECT, \
+   MTP_OP_SEND_OBJECT_INFO, \
+   MTP_OP_SEND_OBJECT, \
+   MTP_OP_RESET_DEVICE, \
+   MTP_OP_GET_DEVICE_PROP_DESC, \
+   MTP_OP_GET_DEVICE_PROP_VALUE, \
+   MTP_OP_SET_DEVICE_PROP_VALUE
 
-// CDC Endpoint transfer buffer size, more is faster
-#define CFG_TUD_CDC_EP_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)
+#define CFG_TUD_MTP_DEVICEINFO_SUPPORTED_EVENTS \
+    MTP_EVENT_OBJECT_ADDED
 
-// MSC Buffer size of Device Mass storage
-#define CFG_TUD_MSC_EP_BUFSIZE   512
+#define CFG_TUD_MTP_DEVICEINFO_SUPPORTED_DEVICE_PROPERTIES  \
+    MTP_DEV_PROP_DEVICE_FRIENDLY_NAME
+
+#define CFG_TUD_MTP_DEVICEINFO_CAPTURE_FORMATS \
+    MTP_OBJ_FORMAT_UNDEFINED, \
+    MTP_OBJ_FORMAT_ASSOCIATION, \
+    MTP_OBJ_FORMAT_TEXT, \
+    MTP_OBJ_FORMAT_PNG
+
+#define CFG_TUD_MTP_DEVICEINFO_PLAYBACK_FORMATS \
+    MTP_OBJ_FORMAT_UNDEFINED, \
+    MTP_OBJ_FORMAT_ASSOCIATION, \
+    MTP_OBJ_FORMAT_TEXT, \
+    MTP_OBJ_FORMAT_PNG
 
 #ifdef __cplusplus
  }
 #endif
 
-#endif /* PICO_LITTLEFS_USB_TUSB_CONFIG_H_ */
+#endif /* TUSB_CONFIG_H_ */
